@@ -346,7 +346,7 @@ function badges(v) {
     v.jammer && '<span class="badge text-bg-secondary">Jammer</span>',
     v.imani && '<span class="badge text-bg-success">Imani Tech</span>',
     v.hsw && '<span class="badge text-bg-warning">HSW</span>',
-    v.drift && '<span class="badge text-bg-info">Drift</span>',
+    v.drift && `<span class="badge text-bg-info">${v.driftTune ? "Drift-Tune möglich" : "Drift"}</span>`,
     v.patrol && '<span class="badge text-bg-primary">Streifenwagen</span>',
     v.pegasus && '<span class="badge text-bg-primary">Pegasus</span>',
     v.special && '<span class="badge text-bg-danger">Spezialfähigkeit</span>',
@@ -396,6 +396,9 @@ function showDetail(v) {
       ${row("Vmax (Handling)", v.speed != null ? v.speed + " km/h" : "")}
       ${row("Preis", esc(v.priceText).replace(/\n/g, "<br>"))}
       ${row("Einkaufspreis (Trade Price)", esc(v.tradePriceText).replace(/\n/g, "<br>"))}
+      ${v.driftTune ? row("Drift-Tune-Upgrade", esc(v.driftTune.price != null ? fmt(v.driftTune.price) : v.driftTune.priceText)
+          + (/car meet/i.test(v.driftTune.priceText || "") ? ' <span class="text-secondary">(LS Car Meet)</span>' : "")) : ""}
+      ${v.driftTune && v.driftTune.speed != null ? row("Vmax mit Drift-Tune", v.driftTune.speed + " km/h") : ""}
       ${row("Kaufbar bei", esc((v.dealers || []).join(", ")) || '<span class="text-secondary">nicht kaufbar / unbekannt</span>')}
       ${row("Update / DLC", esc(v.dlc))}
     </tbody></table>

@@ -304,6 +304,50 @@ def parse_page(title, text):
     }
 
 
+def dealers_from_price(vehicles):
+    """Ergaenzt Haendler, die nur im Preistext stehen (Wiki-Kategorie fehlt, z. B. Hardy)."""
+    known = {d for v in vehicles for d in v.get("dealers", [])}
+    added = 0
+    for v in vehicles:
+        text = v.get("priceText") or ""
+        for d in known:
+            if d in text and d not in v["dealers"]:
+                v["dealers"] = sorted(v["dealers"] + [d])
+                added += 1
+    print(f"    Haendler aus Preistext ergaenzt: {added}")
+    return vehicles
+
+
+DRIFT_SUFFIX = " (Drift Tune)"
+
+
+def merge_drift_tunes(vehicles):
+    """
+    Das Wiki fuehrt Drift-Tune-Umbauten als eigene Seiten ("Hardy (Drift Tune)").
+    Das ist kein eigenes Fahrzeug, sondern ein Upgrade: Kosten und Werte werden
+    beim Basisfahrzeug als 'driftTune' eingetragen, die Upgrade-Seite entfaellt.
+    Ohne passendes Basisfahrzeug bleibt der Eintrag unveraendert.
+    """
+    by_title = {v["title"]: v for v in vehicles}
+    merged = set()
+    for v in vehicles:
+        if not v["title"].endswith(DRIFT_SUFFIX):
+            continue
+        base = by_title.get(v["title"][: -len(DRIFT_SUFFIX)])
+        if not base:
+            continue
+        base["driftTune"] = {
+            "price": v.get("price"),
+            "priceText": v.get("priceText", ""),
+            "speed": v.get("speed"),
+            "url": v.get("url"),
+        }
+        base["drift"] = True
+        merged.add(v["title"])
+    print(f"    Drift-Tune-Upgrades zusammengefuehrt: {len(merged)}")
+    return [v for v in vehicles if v["title"] not in merged]
+
+
 # ---------------------------------------------------------------- Ablauf
 
 def main():
@@ -414,6 +458,9 @@ def main():
             "patrol": t in flags["police"] and v["cls"] not in NOT_PATROL_CLASSES,
         })
         vehicles.append(v)
+
+    vehicles = merge_drift_tunes(vehicles)
+    vehicles = dealers_from_price(vehicles)
 
     # Schreibweisen vereinheitlichen: gross/klein (z. B. Jobuilt/JoBuilt) -> haeufigste Form
     counts = {}
