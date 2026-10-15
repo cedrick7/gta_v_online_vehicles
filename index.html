@@ -39,6 +39,9 @@
     .price { font-weight: 700; font-size: 1.1rem; }
     .desc { white-space: pre-line; background: var(--app-muted-bg); border-radius: .75rem; padding: 1rem 1.25rem; }
     .modal-content { background: var(--app-surface); }
+    .ms-list { max-height: 16rem; overflow-y: auto; background: var(--app-bg); }
+    .ms-list .form-check { padding-top: .2rem; padding-bottom: .2rem; }
+    .ms-list .form-check-label { width: 100%; cursor: pointer; }
     @media (min-width: 992px) { .filters { position: sticky; top: 6rem; max-height: calc(100vh - 7rem); overflow-y: auto; } }
   </style>
 </head>
@@ -71,21 +74,16 @@
               <option value="price-desc">Preis absteigend</option>
               <option value="price-asc">Preis aufsteigend</option>
               <option value="speed-desc">Vmax absteigend</option>
+              <option value="seats-desc">Sitze absteigend</option>
             </select>
           </div>
-          <div class="mb-4"><div class="filter-label">Klasse</div><select id="fClass" class="form-select"></select></div>
-          <div class="mb-4"><div class="filter-label">Hersteller</div><select id="fMaker" class="form-select"></select></div>
-          <div class="mb-4"><div class="filter-label">Händler</div><select id="fDealer" class="form-select"></select></div>
-          <div class="mb-4"><div class="filter-label">Update / DLC</div><select id="fDlc" class="form-select"></select></div>
+          <div class="mb-4"><div class="filter-label">Klasse</div><div id="fClass"></div></div>
+          <div class="mb-4"><div class="filter-label">Hersteller</div><div id="fMaker"></div></div>
+          <div class="mb-4"><div class="filter-label">Händler</div><div id="fDealer"></div></div>
+          <div class="mb-4"><div class="filter-label">Update / DLC</div><div id="fDlc"></div></div>
+          <div class="mb-4"><div class="filter-label">Lagerort (Spezial)</div><div id="fStorage"></div></div>
 
-          <div class="mb-4">
-            <div class="filter-label">Vmax (Handling-Wert)</div>
-            <div class="d-flex justify-content-between small mb-1"><span id="spMinV"></span><span id="spMaxV"></span></div>
-            <label class="small text-secondary" for="spMin">von</label>
-            <input type="range" class="form-range" id="spMin" min="0" step="1">
-            <label class="small text-secondary" for="spMax">bis</label>
-            <input type="range" class="form-range" id="spMax" min="0" step="1">
-          </div>
+          <div id="ranges"></div>
 
           <div id="triFilters"></div>
 
@@ -133,15 +131,29 @@ const TRI = [
   { key: "armored", label: "Panzerung" },
   { key: "jammer",  label: "Missile Lock-On Jammer" },
   { key: "imani",   label: "Imani Tech" },
+  { key: "hsw",     label: "HSW (Hao's Special Works)" },
   { key: "drift",   label: "Driftcar" },
   { key: "patrol",  label: "Streifenwagen" },
+  { key: "special", label: "Spezialfähigkeiten" },
+  { key: "bulletproof", label: "Kugelsichere Scheiben" },
+  { key: "bennys",  label: "Benny's-Umbau möglich" },
+  { key: "awd",     label: "Allradantrieb" },
+  { key: "ee",      label: "Nur PS5 / Xbox Series / PC Enhanced" },
+  { key: "hasTrade", label: "Einkaufspreis vorhanden" },
   { key: "garage",  label: "In Garage lagern", todo: "TODO: keine verlässliche Datenquelle gefunden" },
-  { key: "hangar",  label: "In Hangar lagern" },
   { key: "pegasus", label: "Über Pegasus anfordern" },
   { key: "removed", label: "Aus dem Handel entfernt" }
 ];
 
-let vehicles = [], filtered = [], shown = 0, speedFloor = 0;
+// von/bis-Regler. Beide enden abgerundet beim Höchstwert; "bis" ganz rechts = ohne Obergrenze.
+const RANGES = [
+  { key: "speed", label: "Vmax (Handling-Wert)", step: 1, fmt: n => n + " km/h" },
+  { key: "price", label: "Preis", step: 50000, fmt: n => fmt(n) },
+  { key: "seats", label: "Sitze", step: 1, fmt: n => String(n) }
+];
+const rangeTop = {};  // key -> Reglermaximum
+
+let vehicles = [], filtered = [], shown = 0;
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = n => n == null ? "" : "$" + n.toLocaleString("de-DE");
@@ -174,31 +186,130 @@ $("triFilters").innerHTML = TRI.map(t => `
     </div>
   </div>`).join("");
 
-function fillSelect(id, values) {
-  const list = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
-  $(id).innerHTML = `<option value="">Alle</option>` + list.map(x => `<option>${esc(x)}</option>`).join("");
+// ---------- Mehrfachauswahl mit Checkboxen (Standard: alles ausgewählt)
+// key: Feld im Fahrzeug; list: Feld enthält mehrere Werte (Händler)
+const MULTI = [
+  { id: "fClass",  key: "cls",     empty: "(keine Angabe)" },
+  { id: "fMaker",  key: "maker",   empty: "(keine Angabe)" },
+  { id: "fDealer", key: "dealers", empty: "nicht kaufbar", list: true },
+  { id: "fDlc",    key: "dlc",     empty: "(keine Angabe)" },
+  { id: "fStorage", key: "storage", empty: "keine Spezial-Lagerung", list: true }
+];
+const msState = {};  // id -> { all: [Werte], sel: Set }
+
+const valuesOf = (v, m) => {
+  const raw = m.list ? (v[m.key] || []) : [v[m.key] || ""];
+  return raw.length ? raw : [""];
+};
+
+function buildMulti(m) {
+  const vals = [...new Set(vehicles.flatMap(v => valuesOf(v, m)))]
+    .sort((a, b) => (a === "") - (b === "") || a.localeCompare(b, "de"));
+  msState[m.id] = { all: vals, sel: new Set(vals) };
+  const box = $(m.id);
+  box.innerHTML = `
+    <button type="button" class="form-select text-start" data-bs-toggle="collapse" data-bs-target="#${m.id}_list"
+            aria-expanded="false"><span class="ms-summary">Alle</span></button>
+    <div class="collapse" id="${m.id}_list">
+      <div class="ms-list border rounded-3 mt-2 p-2">
+        ${vals.length > 12 ? `<input type="search" class="form-control form-control-sm mb-2 ms-search" placeholder="Liste durchsuchen ...">` : ""}
+        <div class="form-check border-bottom pb-2 mb-1">
+          <input class="form-check-input ms-all" type="checkbox" id="${m.id}_all" checked>
+          <label class="form-check-label fw-semibold" for="${m.id}_all">Alle auswählen</label>
+        </div>
+        ${vals.map((x, i) => `
+          <div class="form-check ms-item" data-text="${esc((x || m.empty).toLowerCase())}">
+            <input class="form-check-input ms-opt" type="checkbox" id="${m.id}_${i}" value="${esc(x)}" checked>
+            <label class="form-check-label" for="${m.id}_${i}">${esc(x || m.empty)}</label>
+          </div>`).join("")}
+      </div>
+    </div>`;
+
+  box.onchange = e => {
+    const st = msState[m.id];
+    if (e.target.classList.contains("ms-all")) {
+      box.querySelectorAll(".ms-opt").forEach(cb => cb.checked = e.target.checked);
+    }
+    st.sel = new Set([...box.querySelectorAll(".ms-opt:checked")].map(cb => cb.value));
+    updateMultiSummary(m);
+    apply();
+  };
+  const search = box.querySelector(".ms-search");
+  if (search) search.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    box.querySelectorAll(".ms-item").forEach(el => el.classList.toggle("d-none", !!q && !el.dataset.text.includes(q)));
+  });
+}
+
+function updateMultiSummary(m) {
+  const box = $(m.id), st = msState[m.id], n = st.sel.size, total = st.all.length;
+  const all = box.querySelector(".ms-all");
+  all.checked = n === total;
+  all.indeterminate = n > 0 && n < total;
+  const names = [...st.sel].map(x => x || m.empty);
+  box.querySelector(".ms-summary").textContent =
+    n === total ? "Alle" : n === 0 ? "Keine" : n <= 2 ? names.join(", ") : `${n} von ${total}`;
+}
+
+function resetMulti() {
+  MULTI.forEach(m => {
+    $(m.id).querySelectorAll(".ms-opt").forEach(cb => cb.checked = true);
+    msState[m.id].sel = new Set(msState[m.id].all);
+    updateMultiSummary(m);
+  });
+}
+
+const passMulti = v => MULTI.every(m => {
+  const st = msState[m.id];
+  if (st.sel.size === st.all.length) return true;  // alles ausgewählt = kein Filter
+  return valuesOf(v, m).some(x => st.sel.has(x));
+});
+
+// ---------- von/bis-Regler
+function buildRanges() {
+  $("ranges").innerHTML = RANGES.map(r => {
+    const top = Math.max(0, ...vehicles.map(v => v[r.key] || 0));
+    rangeTop[r.key] = Math.floor(top / r.step) * r.step;  // abgerundet auf Schrittweite
+    return `
+    <div class="mb-4">
+      <div class="filter-label">${r.label}</div>
+      <div class="d-flex justify-content-between small mb-1"><span id="r_${r.key}_minV"></span><span id="r_${r.key}_maxV"></span></div>
+      <label class="small text-secondary" for="r_${r.key}_min">von</label>
+      <input type="range" class="form-range" id="r_${r.key}_min" min="0" max="${rangeTop[r.key]}" step="${r.step}" value="0">
+      <label class="small text-secondary" for="r_${r.key}_max">bis</label>
+      <input type="range" class="form-range" id="r_${r.key}_max" min="0" max="${rangeTop[r.key]}" step="${r.step}" value="${rangeTop[r.key]}">
+    </div>`;
+  }).join("");
+}
+
+function resetRanges() {
+  RANGES.forEach(r => { $(`r_${r.key}_min`).value = 0; $(`r_${r.key}_max`).value = rangeTop[r.key]; });
+}
+
+// liefert je Regler [key, lo, hi] oder null, wenn er nichts einschränkt
+function readRanges() {
+  return RANGES.map(r => {
+    let lo = +$(`r_${r.key}_min`).value, hi = +$(`r_${r.key}_max`).value;
+    if (lo > hi) [lo, hi] = [hi, lo];
+    const hiOpen = hi >= rangeTop[r.key];
+    $(`r_${r.key}_minV`).textContent = r.fmt(lo);
+    $(`r_${r.key}_maxV`).textContent = hiOpen ? "max" : r.fmt(hi);
+    return lo > 0 || !hiOpen ? [r.key, lo, hiOpen ? Infinity : hi] : null;
+  }).filter(Boolean);
 }
 
 function init(data) {
   vehicles = Array.isArray(data) ? data : data.vehicles;
   const meta = data.meta || {};
-  fillSelect("fClass", vehicles.map(v => v.cls));
-  fillSelect("fMaker", vehicles.map(v => v.maker));
-  fillSelect("fDealer", vehicles.flatMap(v => v.dealers || []));
-  $("fDealer").insertAdjacentHTML("beforeend", `<option value="__none">nicht kaufbar</option>`);
-  fillSelect("fDlc", vehicles.map(v => v.dlc));
-
-  // Beide Regler enden abgerundet beim schnellsten Fahrzeug.
-  // "bis" ganz rechts bedeutet: keine Obergrenze (das schnellste Fahrzeug bleibt sichtbar).
-  const top = Math.max(0, ...vehicles.map(v => v.speed || 0));
-  speedFloor = Math.floor(top);
-  $("spMin").max = speedFloor; $("spMax").max = speedFloor;
-  $("spMin").value = 0; $("spMax").value = speedFloor;
+  vehicles.forEach(v => { v.hasTrade = v.tradePrice != null; });
+  MULTI.forEach(buildMulti);
+  buildRanges();
 
   $("source").innerHTML = `Daten: <a href="https://gta.wiki" target="_blank" rel="noopener">GTA Wiki</a>
     (${esc(meta.source || "CC BY-NC-SA 3.0")}), Stand ${esc(meta.generated || "unbekannt")}.
     Bilder und Beschreibungstexte © Rockstar Games. Vmax ist der Handling-Wert aus den Spieldaten, kein gemessener Wert.
-    Jammer: laut Händlerbeschreibung. Streifenwagen: Polizeifahrzeuge ohne Helikopter, Flugzeuge, Boote und Motorräder.`;
+    Jammer: laut Händlerbeschreibung. Streifenwagen: Polizeifahrzeuge ohne Helikopter, Flugzeuge, Boote und Motorräder.
+    Preis- und Sitzfilter blenden Fahrzeuge ohne entsprechende Angabe aus, sobald sie eingeschränkt werden.`;
   $("status").classList.add("d-none");
   $("fallback").classList.add("d-none");
   apply();
@@ -206,22 +317,13 @@ function init(data) {
 
 function apply() {
   const q = $("q").value.trim().toLowerCase();
-  const cls = $("fClass").value, maker = $("fMaker").value, dealer = $("fDealer").value, dlc = $("fDlc").value;
-  let lo = +$("spMin").value, hi = +$("spMax").value;
-  if (lo > hi) [lo, hi] = [hi, lo];
-  const hiOpen = hi >= speedFloor;  // ganz rechts = ohne Obergrenze
-  $("spMinV").textContent = lo + " km/h"; $("spMaxV").textContent = hiOpen ? "max" : hi + " km/h";
-  if (hiOpen) hi = Infinity;
-  const speedActive = lo > 0 || !hiOpen;
+  const ranges = readRanges();
   const tri = TRI.filter(t => !t.todo).map(t => [t.key, document.querySelector(`input[name="t_${t.key}"]:checked`).value]);
 
   filtered = vehicles.filter(v =>
     (!q || [v.name, v.nameDe, v.model, v.maker, v.title].join(" ").toLowerCase().includes(q)) &&
-    (!cls || v.cls === cls) &&
-    (!maker || v.maker === maker) &&
-    (!dlc || v.dlc === dlc) &&
-    (!dealer || (dealer === "__none" ? !(v.dealers || []).length : (v.dealers || []).includes(dealer))) &&
-    (!speedActive || (v.speed != null && v.speed >= lo && v.speed <= hi)) &&
+    passMulti(v) &&
+    ranges.every(([k, lo, hi]) => v[k] != null && v[k] >= lo && v[k] <= hi) &&
     tri.every(([k, val]) => !val || (val === "ja") === !!v[k])
   );
 
@@ -231,6 +333,7 @@ function apply() {
     s === "price-asc" ? num(a, b, "price", 1) :
     s === "price-desc" ? num(a, b, "price", -1) :
     s === "speed-desc" ? num(a, b, "speed", -1) :
+    s === "seats-desc" ? num(a, b, "seats", -1) :
     displayName(a).localeCompare(displayName(b), "de"));
 
   shown = 0; $("grid").innerHTML = ""; more();
@@ -242,10 +345,16 @@ function badges(v) {
     v.armored && '<span class="badge text-bg-secondary">Gepanzert</span>',
     v.jammer && '<span class="badge text-bg-secondary">Jammer</span>',
     v.imani && '<span class="badge text-bg-success">Imani Tech</span>',
+    v.hsw && '<span class="badge text-bg-warning">HSW</span>',
     v.drift && '<span class="badge text-bg-info">Drift</span>',
     v.patrol && '<span class="badge text-bg-primary">Streifenwagen</span>',
     v.pegasus && '<span class="badge text-bg-primary">Pegasus</span>',
-    v.hangar && '<span class="badge text-bg-light">Hangar</span>',
+    v.special && '<span class="badge text-bg-danger">Spezialfähigkeit</span>',
+    v.bulletproof && '<span class="badge text-bg-secondary">Kugelsicher</span>',
+    v.bennys && '<span class="badge text-bg-info">Benny\'s</span>',
+    v.awd && '<span class="badge text-bg-secondary">Allrad</span>',
+    v.ee && '<span class="badge text-bg-light">nur Next-Gen/PC Enhanced</span>',
+    ...(v.storage || []).map(s => `<span class="badge text-bg-light">${esc(s)}</span>`),
     v.removed && '<span class="badge text-bg-warning">Entfernt</span>'
   ].filter(Boolean).join(" ");
 }
@@ -298,14 +407,15 @@ function showDetail(v) {
 }
 
 // ---------- Events
-["q", "sort", "fClass", "fMaker", "fDealer", "fDlc", "spMin", "spMax"].forEach(id => $(id).addEventListener("input", apply));
+["q", "sort"].forEach(id => $(id).addEventListener("input", apply));
+$("ranges").addEventListener("input", apply);
 $("triFilters").addEventListener("change", apply);
 $("more").addEventListener("click", more);
 $("grid").addEventListener("click", e => { const c = e.target.closest(".vcard"); if (c) showDetail(filtered[+c.dataset.i]); });
 $("reset").addEventListener("click", () => {
   $("q").value = ""; $("sort").value = "name";
-  ["fClass", "fMaker", "fDealer", "fDlc"].forEach(id => $(id).value = "");
-  $("spMin").value = 0; $("spMax").value = speedFloor;
+  resetMulti();
+  resetRanges();
   document.querySelectorAll('#triFilters input[value=""]').forEach(r => r.checked = true);
   apply();
 });

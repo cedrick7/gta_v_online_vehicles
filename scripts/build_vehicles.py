@@ -35,7 +35,14 @@ FLAG_CATS = {
     "hangar": ["Category:Vehicles storable in a Hangar"],  # Unterkategorien nach Groesse
     "imani": ["Category:Vehicles eligible for Imani Tech upgrades"],
     "police": ["Category:Law enforcement vehicles"],
+    "hsw": ["Category:Vehicles eligible for Hao's Special Works conversion"],
+    "special": ["Category:Vehicles with Special Abilities"],
+    "bulletproof": ["Category:Vehicles with bullet-resistant windows"],
+    "bennys": ["Category:Vehicles eligible for Benny's Original Motor Works conversion"],
+    "awd": ["Category:All wheel drive vehicles"],
+    "ee": ["Category:Vehicles in GTA Online: Expanded and Enhanced Edition"],  # ergaenzt um {{E|E&E}} im Infobox-Feld games
 }
+STORAGE_PREFIX = "Vehicles storable in "
 # Klassen, die nicht als "Streifenwagen" zaehlen (Polizei-Helis, -Boote, -Motorraeder)
 NOT_PATROL_CLASSES = {"Helicopters", "Planes", "Boats", "Motorcycles", "Cycles"}
 DEALER_PREFIX = "Vehicles purchasable from "
@@ -291,6 +298,9 @@ def parse_page(title, text):
         "tradePrice": money(clean(info.get("trade_price"))),
         "speed": speed,
         "descriptions": descriptions,
+        # {{E|E&E}} = nur Expanded and Enhanced Edition (PS5, Xbox Series, PC Enhanced);
+        # {{E|EE&E}} bedeutet beide Editionen und zaehlt nicht
+        "eeOnly": bool(re.search(r"\{\{\s*(?:E|Edition)\s*\|\s*E&E\s*\}\}", info.get("games", ""))),
     }
 
 
@@ -333,6 +343,13 @@ def main():
         for t in cat_members(cat):
             dealers.setdefault(t, []).append(name)
 
+    storage = {}
+    for cat in categories_with_prefix(STORAGE_PREFIX):
+        label = re.sub(r"^(a|an|the) ", "", cat.split(STORAGE_PREFIX, 1)[1])
+        for t in cat_members(cat, recurse_prefix=None):  # Hangar hat Unterkategorien nach Groesse
+            storage.setdefault(t, set()).add(label)
+    print(f"    Lagerorte: {sorted({l for s in storage.values() for l in s})}")
+
     makers = {}
     for cat in categories_with_prefix(MAKER_PREFIX):
         name = re.sub(r"\s*\([^)]*\)", "", cat.split(MAKER_PREFIX, 1)[1]).strip()
@@ -369,6 +386,7 @@ def main():
             continue
         v["makerRaw"] = v["maker"]
         v["maker"] = pick_maker(v["maker"], makers.get(t, []))
+        ee_only = v.pop("eeOnly")
         jammer = any("lock-on jammer" in d["text"].lower() for d in v["descriptions"])
         v.update({
             "url": "https://gta.wiki/w/" + urllib.parse.quote(t.replace(" ", "_")),
@@ -384,6 +402,13 @@ def main():
             "garage": None,  # TODO: keine verlaessliche Kategorie im Wiki gefunden
             "removed": t in removed and t not in reinstated,
             "imani": t in flags["imani"],
+            "hsw": t in flags["hsw"],
+            "special": t in flags["special"],
+            "bulletproof": t in flags["bulletproof"],
+            "bennys": t in flags["bennys"],
+            "awd": t in flags["awd"],
+            "ee": ee_only or t in flags["ee"],
+            "storage": sorted(storage.get(t, [])),
             "jammer": jammer,  # laut Haendlerbeschreibung ("Missile Lock-On Jammer available")
             "police": t in flags["police"],
             "patrol": t in flags["police"] and v["cls"] not in NOT_PATROL_CLASSES,

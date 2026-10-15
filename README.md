@@ -5,8 +5,9 @@ Such- und filterbare Übersicht aller Fahrzeuge in GTA Online. Statische Webseit
 ## Funktionen
 
 - Volltextsuche (Name, deutscher Name, Modellname, Hersteller)
-- Filter: Klasse, Hersteller, Händler, Update/DLC, Vmax (von/bis)
-- Ja/Nein-Filter: Bewaffnung, Panzerung, Missile Lock-On Jammer, Imani Tech, Driftcar, Streifenwagen, Hangar, Pegasus, aus dem Handel entfernt
+- Mehrfachauswahl mit Checkboxen: Klasse, Hersteller, Händler, Update/DLC, Lagerort (Hangar, Bunker, Facility, Kosatka ...)
+- von/bis-Regler: Vmax, Preis, Sitze
+- Ja/Nein-Filter: Bewaffnung, Panzerung, Missile Lock-On Jammer, Imani Tech, HSW, Driftcar, Streifenwagen, Spezialfähigkeiten, kugelsichere Scheiben, Benny's-Umbau, Allrad, nur PS5/Xbox Series/PC Enhanced, Einkaufspreis vorhanden, Pegasus, aus dem Handel entfernt
 - Detailansicht mit Bild, Händlertext aus dem Spiel, Preis und Einkaufspreis (Trade Price)
 - Darstellung: Dunkel, Hell oder Auto (Systemeinstellung)
 
