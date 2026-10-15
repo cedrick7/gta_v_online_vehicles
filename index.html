@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="de" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GTA Online Fahrzeuge</title>
+  <script>
+    // Theme vor dem Rendern setzen (kein Aufblitzen). Gespeicherte Wahl: auto | light | dark
+    (function () {
+      let pref = "dark";
+      try { pref = localStorage.getItem("theme") || "dark"; } catch (e) {}
+      const resolved = pref === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : pref;
+      document.documentElement.setAttribute("data-bs-theme", resolved);
+      window.__themePref = pref;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root { --bs-body-font-family: "Inter", system-ui, sans-serif; --bs-body-font-size: 1.0625rem; }
+    [data-bs-theme="light"] { --app-bg: #f4f5f7; --app-surface: #fff; --app-muted-bg: #e9ebee; }
+    [data-bs-theme="dark"]  { --app-bg: #0f1115; --app-surface: #1a1d23; --app-muted-bg: #242830;
+                              --bs-body-bg: #0f1115; --bs-border-color: #2c313a; }
+    body { background: var(--app-bg); }
+    .topbar { position: sticky; top: 0; z-index: 1030; background: #0b0c0f; border-bottom: 1px solid #22252c; }
+    .topbar .form-control { border-radius: 2rem; padding: .75rem 1.25rem; }
+    .surface { background: var(--app-surface); }
+    .vcard { border: 0; border-radius: 1rem; overflow: hidden; cursor: pointer; background: var(--app-surface);
+             transition: transform .15s, box-shadow .15s; }
+    .vcard:hover { transform: translateY(-2px); box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.25); }
+    .vcard img, .ph { object-fit: cover; background: var(--app-muted-bg); }
+    .ph { display: flex; align-items: center; justify-content: center; color: var(--bs-secondary-color); font-size: .9rem; }
+    .badge { font-weight: 500; padding: .45em .7em; }
+    .filter-label { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+                    color: var(--bs-secondary-color); margin-bottom: .4rem; }
+    .btn-check + .btn { padding: .45rem .9rem; }
+    .price { font-weight: 700; font-size: 1.1rem; }
+    .desc { white-space: pre-line; background: var(--app-muted-bg); border-radius: .75rem; padding: 1rem 1.25rem; }
+    .modal-content { background: var(--app-surface); }
+    @media (min-width: 992px) { .filters { position: sticky; top: 6rem; max-height: calc(100vh - 7rem); overflow-y: auto; } }
+  </style>
+</head>
+<body>
+
+<!-- Kopfzeile mit Suche -->
+<header class="topbar py-3" data-bs-theme="dark">
+  <div class="container-xxl px-3 d-flex gap-2 align-items-center">
+    <span class="text-white fw-bold fs-5 d-none d-sm-inline me-2">GTA Online Fahrzeuge</span>
+    <input type="search" id="q" class="form-control" placeholder="Fahrzeug suchen ...">
+    <button id="themeBtn" class="btn btn-outline-light rounded-pill px-3 text-nowrap" title="Darstellung wechseln"></button>
+    <button class="btn btn-light rounded-pill px-3 d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#filters">Filter</button>
+  </div>
+</header>
+
+<div class="container-xxl px-3 py-4">
+  <div class="row g-4">
+
+    <!-- Filter: auf Mobile als Offcanvas, ab lg als Seitenleiste -->
+    <aside class="col-lg-4 col-xl-3">
+      <div class="offcanvas-lg offcanvas-start filters" tabindex="-1" id="filters">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title">Filter</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#filters"></button>
+        </div>
+        <div class="offcanvas-body d-block surface rounded-4 p-4">
+          <div class="mb-4"><div class="filter-label">Sortierung</div>
+            <select id="sort" class="form-select">
+              <option value="name">Name A bis Z</option>
+              <option value="price-desc">Preis absteigend</option>
+              <option value="price-asc">Preis aufsteigend</option>
+              <option value="speed-desc">Vmax absteigend</option>
+            </select>
+          </div>
+          <div class="mb-4"><div class="filter-label">Klasse</div><select id="fClass" class="form-select"></select></div>
+          <div class="mb-4"><div class="filter-label">Hersteller</div><select id="fMaker" class="form-select"></select></div>
+          <div class="mb-4"><div class="filter-label">Händler</div><select id="fDealer" class="form-select"></select></div>
+          <div class="mb-4"><div class="filter-label">Update / DLC</div><select id="fDlc" class="form-select"></select></div>
+
+          <div class="mb-4">
+            <div class="filter-label">Vmax (Handling-Wert)</div>
+            <div class="d-flex justify-content-between small mb-1"><span id="spMinV"></span><span id="spMaxV"></span></div>
+            <label class="small text-secondary" for="spMin">von</label>
+            <input type="range" class="form-range" id="spMin" min="0" step="1">
+            <label class="small text-secondary" for="spMax">bis</label>
+            <input type="range" class="form-range" id="spMax" min="0" step="1">
+          </div>
+
+          <div id="triFilters"></div>
+
+          <button id="reset" class="btn btn-outline-secondary w-100 rounded-pill mt-2">Filter zurücksetzen</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Ergebnisse -->
+    <main class="col-lg-8 col-xl-9">
+      <div id="status" class="alert alert-info rounded-4">Lade Fahrzeugdaten ...</div>
+      <div id="fallback" class="card border-0 rounded-4 p-4 mb-4 surface d-none">
+        <p class="mb-3">Die Datei <code>data/vehicles-data.js</code> wurde nicht gefunden. Erzeuge sie mit
+          <code>python scripts/build_vehicles.py</code>, oder wähle hier eine <code>vehicles.json</code> aus:</p>
+        <input type="file" id="file" accept=".json,application/json" class="form-control">
+      </div>
+      <p class="text-secondary mb-3" id="count"></p>
+      <div id="grid" class="row row-cols-1 row-cols-sm-2 row-cols-xl-3 g-4"></div>
+      <div class="text-center my-5"><button id="more" class="btn btn-primary rounded-pill px-5 py-2 d-none">Mehr anzeigen</button></div>
+      <p class="small text-secondary" id="source"></p>
+    </main>
+  </div>
+</div>
+
+<!-- Detailansicht -->
+<div class="modal fade" id="detail" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content border-0 rounded-4">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold" id="dTitle"></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0" id="dBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="data/vehicles-data.js" onerror="window.VEHICLES_MISSING = true"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PAGE = 48;
+const TRI = [
+  { key: "weapons", label: "Bewaffnung" },
+  { key: "armored", label: "Panzerung" },
+  { key: "jammer",  label: "Missile Lock-On Jammer" },
+  { key: "imani",   label: "Imani Tech" },
+  { key: "drift",   label: "Driftcar" },
+  { key: "patrol",  label: "Streifenwagen" },
+  { key: "garage",  label: "In Garage lagern", todo: "TODO: keine verlässliche Datenquelle gefunden" },
+  { key: "hangar",  label: "In Hangar lagern" },
+  { key: "pegasus", label: "Über Pegasus anfordern" },
+  { key: "removed", label: "Aus dem Handel entfernt" }
+];
+
+let vehicles = [], filtered = [], shown = 0, speedFloor = 0;
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = n => n == null ? "" : "$" + n.toLocaleString("de-DE");
+const displayName = v => v.nameDe && v.nameDe !== v.name ? `${v.nameDe} (${v.name})` : v.name;
+
+// ---------- Theme-Umschalter: dunkel -> hell -> auto
+const THEMES = { dark: "Dunkel", light: "Hell", auto: "Auto" };
+function setTheme(pref) {
+  const resolved = pref === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : pref;
+  document.documentElement.setAttribute("data-bs-theme", resolved);
+  $("themeBtn").textContent = THEMES[pref];
+  window.__themePref = pref;
+  try { localStorage.setItem("theme", pref); } catch (e) {}
+}
+$("themeBtn").addEventListener("click", () => {
+  const order = ["dark", "light", "auto"];
+  setTheme(order[(order.indexOf(window.__themePref) + 1) % order.length]);
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (window.__themePref === "auto") setTheme("auto"); });
+setTheme(window.__themePref || "dark");
+
+// ---------- Drei-Wege-Filter (egal / ja / nein)
+$("triFilters").innerHTML = TRI.map(t => `
+  <div class="mb-4">
+    <div class="filter-label">${t.label} ${t.todo ? '<span class="badge text-bg-warning ms-1">TODO</span>' : ""}</div>
+    <div class="btn-group w-100" role="group" ${t.todo ? `title="${t.todo}"` : ""}>
+      ${["", "ja", "nein"].map(val => `
+        <input type="radio" class="btn-check" name="t_${t.key}" id="t_${t.key}_${val || "all"}" value="${val}" ${val === "" ? "checked" : ""} ${t.todo ? "disabled" : ""}>
+        <label class="btn btn-outline-secondary" for="t_${t.key}_${val || "all"}">${val === "" ? "egal" : val}</label>`).join("")}
+    </div>
+  </div>`).join("");
+
+function fillSelect(id, values) {
+  const list = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "de"));
+  $(id).innerHTML = `<option value="">Alle</option>` + list.map(x => `<option>${esc(x)}</option>`).join("");
+}
+
+function init(data) {
+  vehicles = Array.isArray(data) ? data : data.vehicles;
+  const meta = data.meta || {};
+  fillSelect("fClass", vehicles.map(v => v.cls));
+  fillSelect("fMaker", vehicles.map(v => v.maker));
+  fillSelect("fDealer", vehicles.flatMap(v => v.dealers || []));
+  $("fDealer").insertAdjacentHTML("beforeend", `<option value="__none">nicht kaufbar</option>`);
+  fillSelect("fDlc", vehicles.map(v => v.dlc));
+
+  // Beide Regler enden abgerundet beim schnellsten Fahrzeug.
+  // "bis" ganz rechts bedeutet: keine Obergrenze (das schnellste Fahrzeug bleibt sichtbar).
+  const top = Math.max(0, ...vehicles.map(v => v.speed || 0));
+  speedFloor = Math.floor(top);
+  $("spMin").max = speedFloor; $("spMax").max = speedFloor;
+  $("spMin").value = 0; $("spMax").value = speedFloor;
+
+  $("source").innerHTML = `Daten: <a href="https://gta.wiki" target="_blank" rel="noopener">GTA Wiki</a>
+    (${esc(meta.source || "CC BY-NC-SA 3.0")}), Stand ${esc(meta.generated || "unbekannt")}.
+    Bilder und Beschreibungstexte © Rockstar Games. Vmax ist der Handling-Wert aus den Spieldaten, kein gemessener Wert.
+    Jammer: laut Händlerbeschreibung. Streifenwagen: Polizeifahrzeuge ohne Helikopter, Flugzeuge, Boote und Motorräder.`;
+  $("status").classList.add("d-none");
+  $("fallback").classList.add("d-none");
+  apply();
+}
+
+function apply() {
+  const q = $("q").value.trim().toLowerCase();
+  const cls = $("fClass").value, maker = $("fMaker").value, dealer = $("fDealer").value, dlc = $("fDlc").value;
+  let lo = +$("spMin").value, hi = +$("spMax").value;
+  if (lo > hi) [lo, hi] = [hi, lo];
+  const hiOpen = hi >= speedFloor;  // ganz rechts = ohne Obergrenze
+  $("spMinV").textContent = lo + " km/h"; $("spMaxV").textContent = hiOpen ? "max" : hi + " km/h";
+  if (hiOpen) hi = Infinity;
+  const speedActive = lo > 0 || !hiOpen;
+  const tri = TRI.filter(t => !t.todo).map(t => [t.key, document.querySelector(`input[name="t_${t.key}"]:checked`).value]);
+
+  filtered = vehicles.filter(v =>
+    (!q || [v.name, v.nameDe, v.model, v.maker, v.title].join(" ").toLowerCase().includes(q)) &&
+    (!cls || v.cls === cls) &&
+    (!maker || v.maker === maker) &&
+    (!dlc || v.dlc === dlc) &&
+    (!dealer || (dealer === "__none" ? !(v.dealers || []).length : (v.dealers || []).includes(dealer))) &&
+    (!speedActive || (v.speed != null && v.speed >= lo && v.speed <= hi)) &&
+    tri.every(([k, val]) => !val || (val === "ja") === !!v[k])
+  );
+
+  const s = $("sort").value;
+  const num = (a, b, k, dir) => ((a[k] ?? (dir > 0 ? Infinity : -Infinity)) - (b[k] ?? (dir > 0 ? Infinity : -Infinity))) * dir;
+  filtered.sort((a, b) =>
+    s === "price-asc" ? num(a, b, "price", 1) :
+    s === "price-desc" ? num(a, b, "price", -1) :
+    s === "speed-desc" ? num(a, b, "speed", -1) :
+    displayName(a).localeCompare(displayName(b), "de"));
+
+  shown = 0; $("grid").innerHTML = ""; more();
+}
+
+function badges(v) {
+  return [
+    v.weapons && '<span class="badge text-bg-danger">Bewaffnet</span>',
+    v.armored && '<span class="badge text-bg-secondary">Gepanzert</span>',
+    v.jammer && '<span class="badge text-bg-secondary">Jammer</span>',
+    v.imani && '<span class="badge text-bg-success">Imani Tech</span>',
+    v.drift && '<span class="badge text-bg-info">Drift</span>',
+    v.patrol && '<span class="badge text-bg-primary">Streifenwagen</span>',
+    v.pegasus && '<span class="badge text-bg-primary">Pegasus</span>',
+    v.hangar && '<span class="badge text-bg-light">Hangar</span>',
+    v.removed && '<span class="badge text-bg-warning">Entfernt</span>'
+  ].filter(Boolean).join(" ");
+}
+
+function more() {
+  const slice = filtered.slice(shown, shown + PAGE);
+  $("grid").insertAdjacentHTML("beforeend", slice.map((v, i) => `
+    <div class="col">
+      <div class="card vcard h-100" data-i="${shown + i}">
+        ${v.image ? `<img src="${esc(v.image)}" class="card-img-top" alt="" loading="lazy" style="aspect-ratio:16/9">`
+                  : `<div class="ph" style="aspect-ratio:16/9">kein Bild</div>`}
+        <div class="card-body p-4">
+          <div class="small text-secondary mb-1">${esc(v.maker)}${v.cls ? " · " + esc(v.cls) : ""}</div>
+          <h3 class="h5 fw-semibold mb-2">${esc(displayName(v))}</h3>
+          <div class="d-flex flex-wrap gap-1 mb-3">${badges(v)}</div>
+          <div class="d-flex justify-content-between align-items-end">
+            <span class="price">${v.price != null ? fmt(v.price) : '<span class="text-secondary fw-normal small">kein Preis</span>'}</span>
+            <span class="small text-secondary">${v.speed != null ? v.speed + " km/h" : ""}</span>
+          </div>
+        </div>
+      </div>
+    </div>`).join(""));
+  shown += slice.length;
+  $("count").textContent = `${filtered.length} von ${vehicles.length} Fahrzeugen`;
+  $("more").classList.toggle("d-none", shown >= filtered.length);
+}
+
+function showDetail(v) {
+  $("dTitle").textContent = displayName(v);
+  const row = (k, val) => val || val === 0 ? `<tr><th class="text-secondary fw-normal pe-4">${k}</th><td>${val}</td></tr>` : "";
+  $("dBody").innerHTML = `
+    ${v.imageFull || v.image ? `<img src="${esc(v.imageFull || v.image)}" class="img-fluid rounded-4 mb-4" alt="">` : ""}
+    <div class="d-flex flex-wrap gap-1 mb-4">${badges(v)}</div>
+    <table class="table table-borderless mb-4" style="--bs-table-bg: transparent"><tbody>
+      ${row("Hersteller", esc(v.maker))}
+      ${row("Klasse", esc(v.cls))}
+      ${row("Modellname", v.model ? `<code>${esc(v.model)}</code>` : "")}
+      ${row("Sitze", esc(v.seats))}
+      ${row("Vmax (Handling)", v.speed != null ? v.speed + " km/h" : "")}
+      ${row("Preis", esc(v.priceText).replace(/\n/g, "<br>"))}
+      ${row("Einkaufspreis (Trade Price)", esc(v.tradePriceText).replace(/\n/g, "<br>"))}
+      ${row("Kaufbar bei", esc((v.dealers || []).join(", ")) || '<span class="text-secondary">nicht kaufbar / unbekannt</span>')}
+      ${row("Update / DLC", esc(v.dlc))}
+    </tbody></table>
+    ${(v.descriptions || []).map(d => `
+      <h6 class="fw-semibold">${esc(d.source)}</h6>
+      <p class="desc mb-4">${esc(d.text)}</p>`).join("")}
+    <a href="${esc(v.url)}" target="_blank" rel="noopener" class="btn btn-outline-secondary rounded-pill">Im GTA Wiki ansehen</a>`;
+  bootstrap.Modal.getOrCreateInstance($("detail")).show();
+}
+
+// ---------- Events
+["q", "sort", "fClass", "fMaker", "fDealer", "fDlc", "spMin", "spMax"].forEach(id => $(id).addEventListener("input", apply));
+$("triFilters").addEventListener("change", apply);
+$("more").addEventListener("click", more);
+$("grid").addEventListener("click", e => { const c = e.target.closest(".vcard"); if (c) showDetail(filtered[+c.dataset.i]); });
+$("reset").addEventListener("click", () => {
+  $("q").value = ""; $("sort").value = "name";
+  ["fClass", "fMaker", "fDealer", "fDlc"].forEach(id => $(id).value = "");
+  $("spMin").value = 0; $("spMax").value = speedFloor;
+  document.querySelectorAll('#triFilters input[value=""]').forEach(r => r.checked = true);
+  apply();
+});
+$("file").addEventListener("change", async e => {
+  try { init(JSON.parse(await e.target.files[0].text())); }
+  catch (err) { $("status").className = "alert alert-danger rounded-4"; $("status").textContent = "Datei konnte nicht gelesen werden: " + err.message; }
+});
+
+// ---------- Start
+if (window.VEHICLES) init(window.VEHICLES);
+else {
+  $("status").className = "alert alert-warning rounded-4";
+  $("status").textContent = "Keine Fahrzeugdaten geladen.";
+  $("fallback").classList.remove("d-none");
+}
+</script>
+</body>
+</html>
